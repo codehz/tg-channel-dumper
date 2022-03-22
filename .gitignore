@@ -1,0 +1,9 @@
+*.yaml
+*.json
+!/import_map.json
+/.vscode
+*.db
+*.dll
+*.so
+*.dylib
+/cache/
