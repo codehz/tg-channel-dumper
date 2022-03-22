@@ -3,8 +3,6 @@ import { Confirm, Input, Secret } from "cliffy/prompt/mod.ts";
 import proto from "./impl/client.ts";
 
 try {
-  await proto.init();
-
   await sendCode(proto, {
     async askCode() {
       return await Input.prompt("Phone code");

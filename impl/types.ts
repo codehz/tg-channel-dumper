@@ -1,6 +1,6 @@
 import { ToUnderscore } from "mtproto/tl/types.ts";
 
-export type BigIntInput = string | number | bigint
+export type BigIntInput = string | number | bigint;
 
 export type PhotoSize = {
   type?: string;
@@ -40,3 +40,13 @@ export type _MessageMedia = {
 
 export type MessageMedia<K extends keyof _MessageMedia = keyof _MessageMedia> =
   ToUnderscore<_MessageMedia, K>;
+
+export type ChatPhoto = {
+  photo_id: string;
+  dc_id: number;
+};
+
+export type UserProfilePhoto = {
+  photo_id: string;
+  dc_id: number;
+};
