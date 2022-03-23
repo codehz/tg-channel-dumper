@@ -9,6 +9,8 @@ import type { ChatPhoto, Photo, UserProfilePhoto } from "./impl/types.ts";
 import proto from "./impl/client.ts";
 import { decode } from "std/encoding/base64.ts";
 import FileDownloader from "./impl/downloader.ts";
+import TaskQueue from "./impl/taskqueue.ts";
+import deduplicate from "./impl/deduplicate.ts";
 
 const outdb = output(options.output);
 
@@ -40,6 +42,10 @@ const query_users = outdb.prepare(`SELECT
 
 const downloader = new FileDownloader(outdb);
 
+const dedup_photo = deduplicate<bigint>();
+const dedup_profile = deduplicate<bigint>();
+const queue = new TaskQueue(10);
+
 try {
   let row;
   while (row = query_messages.step()) {
@@ -48,7 +54,8 @@ try {
     const msgphoto = JSON.parse(photo) as Photo;
     if (
       msgphoto._ == "photo" &&
-      options.download.photo?.max_size != null
+      options.download.photo?.max_size != null &&
+      dedup_photo(BigInt(msgphoto.id))
     ) {
       const sizes = msgphoto.sizes
         .filter((x) => x.size != null && x.type != null)
@@ -58,15 +65,17 @@ try {
       sizes.sort((a, b) => b.size - a.size);
       if (sizes.length > 0) {
         const target_size = sizes[0];
-        await downloader.download_photo(
-          BigInt(chat_id),
-          +msg_id,
-          BigInt(msgphoto.id),
-          decode(msgphoto.file_reference),
-          BigInt(msgphoto.access_hash),
-          target_size.type,
-          target_size.size,
-          msgphoto.dc_id,
+        queue.enqueue(() =>
+          downloader.download_photo(
+            BigInt(chat_id),
+            +msg_id,
+            BigInt(msgphoto.id),
+            decode(msgphoto.file_reference),
+            BigInt(msgphoto.access_hash),
+            target_size.type,
+            target_size.size,
+            msgphoto.dc_id,
+          )
         );
       }
     }
@@ -75,30 +84,36 @@ try {
   while (row = query_chats.step()) {
     const [id, hash, photo] = row.asArray<[string, string, string]>();
     const { photo_id, dc_id } = JSON.parse(photo) as ChatPhoto;
-    await downloader.download_profile_photo(
-      {
-        _: "inputPeerChannel",
-        channel_id: BigInt(id),
-        access_hash: BigInt(hash),
-      },
-      BigInt(photo_id),
-      dc_id,
-    );
+    if (dedup_profile(BigInt(photo_id))) {
+      queue.enqueue(() => downloader.download_profile_photo(
+        {
+          _: "inputPeerChannel",
+          channel_id: BigInt(id),
+          access_hash: BigInt(hash),
+        },
+        BigInt(photo_id),
+        dc_id,
+      ));
+    }
   }
 
   while (row = query_users.step()) {
     const [id, hash, photo] = row.asArray<[string, string, string]>();
     const { photo_id, dc_id } = JSON.parse(photo) as UserProfilePhoto;
-    await downloader.download_profile_photo(
-      {
-        _: "inputPeerUser",
-        user_id: BigInt(id),
-        access_hash: BigInt(hash),
-      },
-      BigInt(photo_id),
-      dc_id,
-    );
+    if (dedup_profile(BigInt(photo_id))) {
+      queue.enqueue(() => downloader.download_profile_photo(
+        {
+          _: "inputPeerUser",
+          user_id: BigInt(id),
+          access_hash: BigInt(hash),
+        },
+        BigInt(photo_id),
+        dc_id,
+      ));
+    }
   }
+
+  await queue.wait;
 } finally {
   query_messages.finalize();
   query_chats.finalize();
