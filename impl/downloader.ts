@@ -89,7 +89,7 @@ export default class FileDownloader {
       throw new Error("photo missing");
     }
     this.db.execute`UPDATE messages
-      SET content = json_set(content, '$.media', ${JSON.stringify(media)})
+      SET content = json_set(content, '$.media', json(${JSON.stringify(media)}))
       WHERE chat_id = ${chat_id} AND msg_id = ${msg_id}`;
     return tou8(media.photo.file_reference);
   }
